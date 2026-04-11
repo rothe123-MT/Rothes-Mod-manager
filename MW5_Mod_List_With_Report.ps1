@@ -295,12 +295,38 @@ function Apply-ThemeToControl($ctrl, $colors) {
 
 function Load-Playlists {
     $items = @()
+    Write-Host "Playlists file path: $PlaylistsFile" -ForegroundColor Yellow
+    Write-Host "Script directory: $ScriptDir" -ForegroundColor Yellow
+    
+    # Ensure script directory exists
+    if (-not (Test-Path $ScriptDir)) {
+        Write-Host "Script directory not found: $ScriptDir" -ForegroundColor Red
+        try {
+            New-Item -ItemType Directory -Path $ScriptDir -Force | Out-Null
+            Write-Host "Created script directory: $ScriptDir" -ForegroundColor Green
+        } catch {
+            Write-Host "Failed to create script directory: $ScriptDir" -ForegroundColor Red
+        }
+    }
+    
     if (Test-Path $PlaylistsFile) {
         try {
             $data = Get-Content $PlaylistsFile -Raw | ConvertFrom-Json
             if ($data.playlists) { $items = @($data.playlists) }
             elseif ($data -is [System.Array]) { $items = @($data) }
-        } catch {}
+        } catch {
+            Write-Host "Error loading playlists file: $PlaylistsFile" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Playlists file not found: $PlaylistsFile" -ForegroundColor Red
+        # Create empty playlists file
+        try {
+            $emptyData = @{ playlists = @() } | ConvertTo-Json -Depth 20
+            $emptyData | Set-Content $PlaylistsFile -Force -Encoding UTF8
+            Write-Host "Created empty playlists file: $PlaylistsFile" -ForegroundColor Green
+        } catch {
+            Write-Host "Failed to create playlists file: $PlaylistsFile" -ForegroundColor Red
+        }
     }
     # Filter out null/empty entries if JSON got partially edited/corrupted
     return @($items | Where-Object { $null -ne $_ })
@@ -1002,18 +1028,43 @@ $saveBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.F
 # Add Revert All Changed Load Orders button
 $revertAllBtn = New-Object System.Windows.Forms.Button
 $revertAllBtn.Text = "Revert All Changed Load Orders"
-$revertAllBtn.Size = New-Object System.Drawing.Size(250, 40)
-$revertAllBtn.Location = New-Object System.Drawing.Point(220, 610)
+$revertAllBtn.Size = New-Object System.Drawing.Size(200, 40)
+$revertAllBtn.Location = New-Object System.Drawing.Point(430, 610)
 $revertAllBtn.BackColor = [System.Drawing.Color]::LightYellow
 $revertAllBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
+# Add Reset Playlists button
+$resetPlaylistsBtn = New-Object System.Windows.Forms.Button
+$resetPlaylistsBtn.Text = "Reset Playlists File"
+$resetPlaylistsBtn.Size = New-Object System.Drawing.Size(200, 40)
+$resetPlaylistsBtn.Location = New-Object System.Drawing.Point(860, 610)
+$resetPlaylistsBtn.BackColor = [System.Drawing.Color]::Orange
+$resetPlaylistsBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+
+$resetPlaylistsBtn.Add_Click({
+    $res = [System.Windows.Forms.MessageBox]::Show("Delete MW5_Mod_Playlists.json file?`n`nThis will remove all playlists and reset the file.`n`nMake sure you have backups if needed.", "Reset Playlists", "YesNo", "Warning")
+    if ($res -eq "Yes") {
+        try {
+            Remove-Item $PlaylistsFile -Force -ErrorAction SilentlyContinue
+            Write-Host "Playlists file deleted: $PlaylistsFile" -ForegroundColor Green
+            $script:playlists = @()
+            Write-Host "Playlists array reset to empty" -ForegroundColor Yellow
+        } catch {
+            Write-Host "Error deleting playlists file: $_" -ForegroundColor Red
+        }
+    }
+})
 $updateReportBtn = New-Object System.Windows.Forms.Button
 $updateReportBtn.Text = "Update Report"
 $updateReportBtn.Size = New-Object System.Drawing.Size(200, 40)
-$updateReportBtn.Location = New-Object System.Drawing.Point(480, 610)
+$updateReportBtn.Location = New-Object System.Drawing.Point(650, 610)
 $updateReportBtn.BackColor = [System.Drawing.Color]::LightGreen
 $updateReportBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
+$updateReportBtn.Add_Click({
+    Update-ModReport
+    [System.Windows.Forms.MessageBox]::Show("Report updated!`n`nMW5_Mod_List.txt has been regenerated.", "Success", "OK", "Information")
+})
 $revertAllBtn.Add_Click({
         $changedMods = @()
         
@@ -1279,28 +1330,35 @@ function Select-PlaylistRowById([string]$id) {
 
 $plApplyBtn = New-Object System.Windows.Forms.Button
 $plApplyBtn.Text = "Apply selected playlist to grid"
-$plApplyBtn.Location = New-Object System.Drawing.Point(690, 35)
+$plApplyBtn.Location = New-Object System.Drawing.Point(10, 605)
 $plApplyBtn.Size = New-Object System.Drawing.Size(220, 30)
 
 $plViewModsBtn = New-Object System.Windows.Forms.Button
 $plViewModsBtn.Text = "See mods in playlist"
-$plViewModsBtn.Location = New-Object System.Drawing.Point(690, 605)
+$plViewModsBtn.Location = New-Object System.Drawing.Point(240, 605)
 $plViewModsBtn.Size = New-Object System.Drawing.Size(220, 30)
 
 $plExportBtn = New-Object System.Windows.Forms.Button
 $plExportBtn.Text = "Export selected"
-$plExportBtn.Location = New-Object System.Drawing.Point(930, 605)
+$plExportBtn.Location = New-Object System.Drawing.Point(470, 605)
 $plExportBtn.Size = New-Object System.Drawing.Size(140, 30)
 
 $plImportBtn = New-Object System.Windows.Forms.Button
 $plImportBtn.Text = "Import from file..."
-$plImportBtn.Location = New-Object System.Drawing.Point(1090, 605)
+$plImportBtn.Location = New-Object System.Drawing.Point(620, 605)
 $plImportBtn.Size = New-Object System.Drawing.Size(160, 30)
 
 $plDeleteBtn = New-Object System.Windows.Forms.Button
 $plDeleteBtn.Text = "Delete selected"
-$plDeleteBtn.Location = New-Object System.Drawing.Point(930, 35)
+$plDeleteBtn.Location = New-Object System.Drawing.Point(790, 605)
 $plDeleteBtn.Size = New-Object System.Drawing.Size(140, 30)
+
+$resetPlaylistsBtn = New-Object System.Windows.Forms.Button
+$resetPlaylistsBtn.Text = "Reset Playlists File"
+$resetPlaylistsBtn.Location = New-Object System.Drawing.Point(940, 605)
+$resetPlaylistsBtn.Size = New-Object System.Drawing.Size(160, 30)
+$resetPlaylistsBtn.BackColor = [System.Drawing.Color]::Orange
+$resetPlaylistsBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
 $plSaveBtn.Add_Click({
         $name = Normalize-PlaylistName $plName.Text
@@ -1471,134 +1529,131 @@ $plApplyBtn.Add_Click({
     })
 
 $plViewModsBtn.Add_Click({
-        if ($plGrid.SelectedRows.Count -eq 0) { return }
-        $p = $plGrid.SelectedRows[0].Tag
-        if (-not $p) { return }
+    if ($plGrid.SelectedRows.Count -eq 0) { 
+        [System.Windows.Forms.MessageBox]::Show("Select a playlist first.", "No selection", "OK", "Warning") | Out-Null
+        return
+    }
+    
+    $p = $plGrid.SelectedRows[0].Tag
+    if (-not $p) { 
+        [System.Windows.Forms.MessageBox]::Show("Selected playlist has no data.", "Error", "OK", "Error") | Out-Null
+        return
+    }
+    
+    if (-not $p.mods -or $p.mods.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("This playlist has no mods.", "Empty playlist", "OK", "Information") | Out-Null
+        return
+    }
 
-        # Locate the live playlist object by id (so edits persist)
-        $plIdx = -1
-        $plId = [string]$p.id
-        if (-not [string]::IsNullOrWhiteSpace($plId)) {
-            for ($i = 0; $i -lt $playlists.Count; $i++) {
-                if ([string]$playlists[$i].id -eq $plId) { $plIdx = $i; break }
+    $vf = New-Object System.Windows.Forms.Form
+    $vf.Text = "Edit playlist: $([string]$p.name)"
+    $vf.Size = New-Object System.Drawing.Size(1200, 760)
+    $vf.StartPosition = 'CenterParent'
+    $vf.Owner = $form
+
+    $hdr = New-Object System.Windows.Forms.Label
+    $hdr.Location = New-Object System.Drawing.Point(12, 12)
+    $hdr.Size = New-Object System.Drawing.Size(1160, 40)
+    $hdr.Text = "Check/uncheck mods to add/remove them from the playlist. Edit load order, then click Save changes."
+    $hdr.AutoSize = $false
+
+    $vg = New-Object System.Windows.Forms.DataGridView
+    $vg.Location = New-Object System.Drawing.Point(12, 60)
+    $vg.Size = New-Object System.Drawing.Size(1160, 600)
+    $vg.AutoSizeColumnsMode = "Fill"
+    $vg.AllowUserToAddRows = $false
+    $vg.ReadOnly = $false
+    $vg.SelectionMode = "FullRowSelect"
+
+    $chkCol = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+    $chkCol.Name = "InPl"
+    $chkCol.HeaderText = "In playlist"
+    $chkCol.Width = 80
+    $vg.Columns.Add($chkCol) | Out-Null
+    $vg.Columns.Add("Name", "Mod Name") | Out-Null
+    $vg.Columns.Add("Load", "Load Order") | Out-Null
+    $vg.Columns.Add("Folder", "Folder Key") | Out-Null
+
+    # Build lookup of playlist mods
+    $plMap = @{}
+    if ($p.mods) {
+        foreach ($m in @($p.mods)) {
+            if ($m -and $m.FolderKey) { $plMap[[string]$m.FolderKey] = $m }
+        }
+    }
+
+    # Fill editor rows from all available mods
+    $modsSorted = @($mods | Sort-Object LoadOrder, Name)
+    foreach ($mod in $modsSorted) {
+        $i = $vg.Rows.Add()
+        $r = $vg.Rows[$i]
+        $k = [string]$mod.FolderKey
+        $in = $plMap.ContainsKey($k)
+        $r.Cells[0].Value = $in
+        $r.Cells[1].Value = [string]$mod.Name
+        if ($in) { 
+            $r.Cells[2].Value = [int]$plMap[$k].LoadOrder 
+        } else { 
+            $r.Cells[2].Value = [int]$mod.LoadOrder 
+        }
+        $r.Cells[3].Value = $k
+    }
+
+    $save = New-Object System.Windows.Forms.Button
+    $save.Text = "Save changes to playlist"
+    $save.Location = New-Object System.Drawing.Point(12, 670)
+    $save.Size = New-Object System.Drawing.Size(220, 34)
+
+    $close = New-Object System.Windows.Forms.Button
+    $close.Text = "Close"
+    $close.Location = New-Object System.Drawing.Point(250, 670)
+    $close.Size = New-Object System.Drawing.Size(120, 34)
+
+    $save.Add_Click({
+        $newMods = @()
+        for ($ri = 0; $ri -lt $vg.Rows.Count; $ri++) {
+            $row = $vg.Rows[$ri]
+            $inPl = [bool]$row.Cells[0].Value
+            if (-not $inPl) { continue }
+            $folder = [string]$row.Cells[3].Value
+            if ([string]::IsNullOrWhiteSpace($folder)) { continue }
+            $nm = [string]$row.Cells[1].Value
+            $lo = 0
+            try { $lo = [int]$row.Cells[2].Value } catch { $lo = 0 }
+            $newMods += [PSCustomObject]@{
+                FolderKey = $folder
+                Name      = $nm
+                LoadOrder = $lo
+                Enabled   = $true
             }
         }
-        if ($plIdx -lt 0) {
-            # fallback by normalized name
-            $pn = Normalize-PlaylistName ([string]$p.name)
-            for ($i = 0; $i -lt $playlists.Count; $i++) {
-                if (Normalize-PlaylistName ([string]$playlists[$i].name) -eq $pn) { $plIdx = $i; break }
-            }
+
+        $p.created = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        $p.notes = "Edited in playlist editor"
+        $p.mods = @($newMods | Sort-Object LoadOrder)
+        
+        if (-not $p.originalLoadOrders) {
+            $p.originalLoadOrders = @{}
         }
-        if ($plIdx -lt 0) { return }
-        $plLive = $playlists[$plIdx]
-
-        $vf = New-Object System.Windows.Forms.Form
-        $vf.Text = "Edit playlist: $([string]$plLive.name)"
-        $vf.Size = New-Object System.Drawing.Size(1200, 760)
-        $vf.StartPosition = 'CenterParent'
-        $vf.Owner = $form
-
-        $hdr = New-Object System.Windows.Forms.Label
-        $hdr.Location = New-Object System.Drawing.Point(12, 12)
-        $hdr.Size = New-Object System.Drawing.Size(1160, 20)
-        $hdr.Text = "Check/uncheck mods to add/remove them from the playlist. Edit load order, then click Save changes."
-
-        $vg = New-Object System.Windows.Forms.DataGridView
-        $vg.Location = New-Object System.Drawing.Point(12, 40)
-        $vg.Size = New-Object System.Drawing.Size(1160, 620)
-        $vg.AutoSizeColumnsMode = "Fill"
-        $vg.AllowUserToAddRows = $false
-        $vg.ReadOnly = $false
-        $vg.SelectionMode = "FullRowSelect"
-        $vg.MultiSelect = $false
-
-        $chkCol = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
-        $chkCol.Name = "InPl"
-        $chkCol.HeaderText = "In playlist"
-        $chkCol.Width = 80
-        $vg.Columns.Add($chkCol) | Out-Null
-        $vg.Columns.Add("Name", "Mod Name") | Out-Null
-        $vg.Columns.Add("Load", "Load Order") | Out-Null
-        $vg.Columns.Add("Folder", "Folder Key") | Out-Null
-
-        # Build lookup of playlist mods
-        $plMap = @{}
-        if ($plLive.mods) {
-            foreach ($m in @($plLive.mods)) {
-                if ($m -and $m.FolderKey) { $plMap[[string]$m.FolderKey] = $m }
-            }
+        foreach ($mod in $newMods) {
+            $p.originalLoadOrders[$mod.FolderKey] = $mod.LoadOrder
         }
 
-        # Fill editor rows from the current Grid mods list (so you can add/remove from there)
-        $modsSorted = @($mods | Sort-Object LoadOrder, Name)
-        foreach ($mod in $modsSorted) {
-            $i = $vg.Rows.Add()
-            $r = $vg.Rows[$i]
-            $k = [string]$mod.FolderKey
-            $in = $plMap.ContainsKey($k)
-            $r.Cells[0].Value = $in
-            $r.Cells[1].Value = [string]$mod.Name
-            if ($in) { $r.Cells[2].Value = [int]$plMap[$k].LoadOrder } else { $r.Cells[2].Value = [int]$mod.LoadOrder }
-            $r.Cells[3].Value = $k
-        }
-
-        $save = New-Object System.Windows.Forms.Button
-        $save.Text = "Save changes to playlist"
-        $save.Location = New-Object System.Drawing.Point(12, 675)
-        $save.Size = New-Object System.Drawing.Size(220, 34)
-
-        $close = New-Object System.Windows.Forms.Button
-        $close.Text = "Close"
-        $close.Location = New-Object System.Drawing.Point(250, 675)
-        $close.Size = New-Object System.Drawing.Size(120, 34)
-        $close.Add_Click({ $vf.Close() })
-
-        $save.Add_Click({
-                $newMods = @()
-                for ($ri = 0; $ri -lt $vg.Rows.Count; $ri++) {
-                    $row = $vg.Rows[$ri]
-                    $inPl = [bool]$row.Cells[0].Value
-                    if (-not $inPl) { continue }
-                    $folder = [string]$row.Cells[3].Value
-                    if ([string]::IsNullOrWhiteSpace($folder)) { continue }
-                    $nm = [string]$row.Cells[1].Value
-                    $lo = 0
-                    try { $lo = [int]$row.Cells[2].Value } catch { $lo = 0 }
-                    $newMods += [PSCustomObject]@{
-                        FolderKey = $folder
-                        Name      = $nm
-                        LoadOrder = $lo
-                        Enabled   = $true
-                    }
-                }
-
-                $plLive.created = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-                $plLive.notes = "Edited in playlist editor"
-                $plLive.mods = @($newMods | Sort-Object LoadOrder)
-                
-                # Update original load orders for edited playlist
-                if (-not $plLive.originalLoadOrders) {
-                    $plLive.originalLoadOrders = @{}
-                }
-                foreach ($mod in $newMods) {
-                    $plLive.originalLoadOrders[$mod.FolderKey] = $mod.LoadOrder
-                }
-                
-                $playlists[$plIdx] = $plLive
-
-                Save-Playlists $playlists
-                Refresh-PlaylistGrid
-                Select-PlaylistRowById ([string]$plLive.id)
-                [System.Windows.Forms.MessageBox]::Show("Saved changes to playlist '$([string]$plLive.name)'.", "Playlist updated", "OK", "Information") | Out-Null
-            })
-
-        $vf.Controls.Add($hdr)
-        $vf.Controls.Add($vg)
-        $vf.Controls.Add($save)
-        $vf.Controls.Add($close)
-        $vf.ShowDialog() | Out-Null
+        Save-Playlists $playlists
+        Refresh-PlaylistGrid
+        [System.Windows.Forms.MessageBox]::Show("Saved changes to playlist '$([string]$p.name)'.", "Playlist updated", "OK", "Information") | Out-Null
+        $vf.Close()
     })
+
+    $close.Add_Click({ $vf.Close() })
+
+    $vf.Controls.Add($hdr)
+    $vf.Controls.Add($vg)
+    $vf.Controls.Add($save)
+    $vf.Controls.Add($close)
+    
+    $vf.ShowDialog() | Out-Null
+})
 
 $plExportBtn.Add_Click({
         if ($plGrid.SelectedRows.Count -eq 0) {
@@ -1773,6 +1828,7 @@ $tabPlaylists.Controls.Add($plViewModsBtn)
 $tabPlaylists.Controls.Add($plExportBtn)
 $tabPlaylists.Controls.Add($plImportBtn)
 $tabPlaylists.Controls.Add($plDeleteBtn)
+$tabPlaylists.Controls.Add($resetPlaylistsBtn)
 $tabPlaylists.Controls.Add($plGrid)
 
 Refresh-PlaylistGrid
