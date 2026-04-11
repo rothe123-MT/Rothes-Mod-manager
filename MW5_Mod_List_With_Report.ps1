@@ -1225,7 +1225,28 @@ $plGrid.Columns.Add("PlNotes", "Notes") | Out-Null
 
 function Refresh-PlaylistGrid {
     $plGrid.Rows.Clear()
-    foreach ($p in ($playlists | Sort-Object { $_.name })) {
+    $plGrid.Refresh()
+    
+    # Debug: Show what playlists we have
+    Write-Host "Refresh-PlaylistGrid called. Playlists in memory: $($playlists.Count)" -ForegroundColor Cyan
+    
+    # IMPORTANT: Do NOT reload from file - use only in-memory data
+    # This prevents accidentally restoring deleted playlists
+    
+    # Ensure playlists array is not null
+    if ($null -eq $playlists) {
+        $playlists = @()
+        Write-Host "Playlists was null, initialized to empty array" -ForegroundColor Red
+    }
+    
+    # Remove any null entries and duplicates
+    $cleanPlaylists = @($playlists | Where-Object { $null -ne $_ } | Sort-Object { $_.name } -Unique)
+    
+    Write-Host "Clean playlists count: $($cleanPlaylists.Count)" -ForegroundColor Cyan
+    
+    # Only add playlists that are actually in memory
+    foreach ($p in $cleanPlaylists) {
+        if ($null -eq $p) { continue }
         $i = $plGrid.Rows.Add()
         $row = $plGrid.Rows[$i]
         $row.Cells[0].Value = [string]$p.name
@@ -1233,7 +1254,11 @@ function Refresh-PlaylistGrid {
         $row.Cells[2].Value = if ($p.mods) { @($p.mods).Count } else { 0 }
         $row.Cells[3].Value = [string]$p.notes
         $row.Tag = $p
+        Write-Host "Added playlist to grid: $($p.name) with $(if ($p.mods) { @($p.mods).Count } else { 0 }) mods" -ForegroundColor Gray
     }
+    
+    Write-Host "Grid refresh complete. Final row count: $($plGrid.Rows.Count)" -ForegroundColor Yellow
+    $plGrid.Refresh()
 }
 
 function Select-PlaylistRowById([string]$id) {
@@ -1290,10 +1315,12 @@ $plSaveBtn.Add_Click({
         if ($plGrid.SelectedRows.Count -gt 0) { $selectedPlaylist = $plGrid.SelectedRows[0].Tag }
 
         $enabledRows = @()
+        Write-Host "Scanning grid for enabled mods... Total rows: $($grid.Rows.Count)" -ForegroundColor Cyan
         for ($i = 0; $i -lt $grid.Rows.Count; $i++) {
             $row = $grid.Rows[$i]
             $mod = $row.Tag
-            $isEnabled = ($row.Cells[3].Value -eq "Enabled")
+            $isEnabled = ($row.Cells[4].Value -eq "Enabled")
+            Write-Host ("Row " + $i + ": " + $mod.Name + " - Enabled column value: '" + $row.Cells[4].Value + "' - IsEnabled: " + $isEnabled) -ForegroundColor Gray
             if (-not $isEnabled) { continue }
             $enabledRows += [PSCustomObject]@{
                 FolderKey  = $mod.FolderKey
@@ -1302,6 +1329,8 @@ $plSaveBtn.Add_Click({
                 Enabled    = $true
             }
         }
+        
+        Write-Host "Found $($enabledRows.Count) enabled mods for playlist creation" -ForegroundColor Green
 
         # Decide which playlist to modify (if any)
         $existingIdx = -1
@@ -1699,20 +1728,41 @@ $plDeleteBtn.Add_Click({
         $id = [string]$p.id
         $res = [System.Windows.Forms.MessageBox]::Show("Delete playlist '$name'?", "Confirm delete", "YesNo", "Warning")
         if ($res -ne "Yes") { return }
-        if (-not [string]::IsNullOrWhiteSpace($id)) {
-            $playlists = @($playlists | Where-Object { [string]$_.id -ne $id })
-        } else {
-            # fallback: only remove one matching name (old playlists without ids)
-            $removed = $false
-            $tmp = @()
-            foreach ($x in @($playlists)) {
-                if (-not $removed -and [string]$x.name -eq $name) { $removed = $true; continue }
-                $tmp += $x
+        
+        # Remove the playlist from the array
+        $newPlaylists = @()
+        $deleted = $false
+        foreach ($pl in @($playlists)) {
+            if (-not $deleted -and ([string]$pl.id -eq $id -or ([string]::IsNullOrWhiteSpace($id) -and [string]$pl.name -eq $name))) {
+                $deleted = $true
+                continue  # Skip this playlist (delete it)
             }
-            $playlists = @($tmp)
+            $newPlaylists += $pl
         }
+        
+        $playlists = $newPlaylists
+        
+        # Verify deletion worked
+        Write-Host "Deleted playlist: $name. Remaining playlists: $($playlists.Count)" -ForegroundColor Yellow
+        
+        # Save to file
         Save-Playlists $playlists
+        
+        # Verify file was updated
+        try {
+            $verifyData = Get-Content $PlaylistsFile -Raw | ConvertFrom-Json
+            Write-Host "File now contains: $($verifyData.playlists.Count) playlists" -ForegroundColor Green
+        } catch {
+            Write-Host "Error verifying file save" -ForegroundColor Red
+        }
+        
+        # Force complete refresh with delay to prevent race conditions
+        Start-Sleep -Milliseconds 200
+        $plGrid.Rows.Clear()
+        $plGrid.Refresh()
+        Start-Sleep -Milliseconds 100
         Refresh-PlaylistGrid
+        $plGrid.Refresh()
     })
 
 $tabPlaylists.Controls.Add($plLabel)
