@@ -1376,6 +1376,14 @@ $plSaveBtn.Add_Click({
             $plObj.created = $now
             $plObj.notes = "Added/updated enabled mods + load order snapshot"
             $plObj.mods = @($existingMods | Sort-Object LoadOrder)
+            
+            # Update original load orders for this playlist
+            if (-not $plObj.originalLoadOrders) {
+                $plObj.originalLoadOrders = @{}
+            }
+            foreach ($mod in $existingMods) {
+                $plObj.originalLoadOrders[$mod.FolderKey] = $mod.LoadOrder
+            }
         } else {
             $plObj = [PSCustomObject]@{
                 id      = ([guid]::NewGuid().ToString())
@@ -1383,6 +1391,12 @@ $plSaveBtn.Add_Click({
                 created = $now
                 notes   = "Enabled mods + load order snapshot"
                 mods    = @($enabledRows | Sort-Object LoadOrder)
+                originalLoadOrders = @{}
+            }
+            
+            # Store original load orders for this playlist
+            foreach ($mod in $enabledRows) {
+                $plObj.originalLoadOrders[$mod.FolderKey] = $mod.LoadOrder
             }
         }
 
@@ -1411,7 +1425,12 @@ $plApplyBtn.Add_Click({
             $k = [string]$mod.FolderKey
             if ($map.ContainsKey($k)) {
                 $row.Cells[3].Value = "Enabled"
-                $row.Cells[1].Value = [int]$map[$k].LoadOrder
+                # Use original load order from playlist if available, otherwise current load order
+                if ($p.originalLoadOrders -and $p.originalLoadOrders.ContainsKey($k)) {
+                    $row.Cells[1].Value = [int]$p.originalLoadOrders[$k]
+                } else {
+                    $row.Cells[1].Value = [int]$map[$k].LoadOrder
+                }
                 $EnabledMods[$k] = $true
             } else {
                 $row.Cells[3].Value = "Disabled"
@@ -1419,7 +1438,7 @@ $plApplyBtn.Add_Click({
             }
         }
 
-        [System.Windows.Forms.MessageBox]::Show("Applied playlist '$($p.name)' to the grid.`n`nNow click 'Save All Changes' to write mod.json + modlist.json.", "Playlist applied", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Applied playlist '$($p.name)' to grid.`n`nNow click 'Save to modlist.json' to write mod.json + modlist.json.", "Playlist applied", "OK", "Information") | Out-Null
     })
 
 $plViewModsBtn.Add_Click({
@@ -1528,6 +1547,15 @@ $plViewModsBtn.Add_Click({
                 $plLive.created = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
                 $plLive.notes = "Edited in playlist editor"
                 $plLive.mods = @($newMods | Sort-Object LoadOrder)
+                
+                # Update original load orders for edited playlist
+                if (-not $plLive.originalLoadOrders) {
+                    $plLive.originalLoadOrders = @{}
+                }
+                foreach ($mod in $newMods) {
+                    $plLive.originalLoadOrders[$mod.FolderKey] = $mod.LoadOrder
+                }
+                
                 $playlists[$plIdx] = $plLive
 
                 Save-Playlists $playlists
