@@ -661,9 +661,8 @@ $themeGridAlt = ColorFromHex ([string]$ui.theme.gridAlt) ([System.Drawing.Color]
 $themeColors = [PSCustomObject]@{ Background=$themeBg; Foreground=$themeFg; Accent=$themeAccent; GridAlt=$themeGridAlt }
 
 $logo = New-Object System.Windows.Forms.PictureBox
-$logo.Location = New-Object System.Drawing.Point(1120, 8)
-$logo.Size = New-Object System.Drawing.Size(160, 40)
-$logo.SizeMode = "Zoom"
+$logo.Location = New-Object System.Drawing.Point(1260, 10)
+$logo.SizeMode = "AutoSize"
 $logo.BackColor = [System.Drawing.Color]::Transparent
 try {
     if ($ui.logoPath -and (Test-Path ([string]$ui.logoPath))) { $logo.Image = [System.Drawing.Image]::FromFile([string]$ui.logoPath) }
@@ -930,6 +929,13 @@ $grid.Columns.Add($comboColumn) | Out-Null
 
 $grid.Columns.Add("Details", "Details") | Out-Null
 
+# Add Mass Change checkbox column at the end
+$massChangeColumn = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+$massChangeColumn.Name = "MassChange"
+$massChangeColumn.HeaderText = "Mass Enable Change"
+$massChangeColumn.Width = 80
+$grid.Columns.Add($massChangeColumn) | Out-Null
+
 foreach ($mod in ($mods | Sort-Object LoadOrder)) {
     $i = $grid.Rows.Add()
     $row = $grid.Rows[$i]
@@ -1018,6 +1024,36 @@ $grid.Add_CellClick({
         Show-ConflictViewForm "Mod Conflicts: $($mod.Name)" $body $form
     })
 
+    # Add CellValueChanged event handler for Mass Enable Change functionality
+    $grid.Add_CellValueChanged({
+        param($sender, $e)
+        if ($e.RowIndex -lt 0) { return }
+        if ($e.ColumnIndex -ne 6) { return }  # Only handle Mass Enable Change column (index 6)
+        
+        $row = $grid.Rows[$e.RowIndex]
+        $mod = $row.Tag
+        $folderKey = [string]$mod.FolderKey
+        
+        if ($row.Cells[6].Value -eq $true) {
+            # Checkbox is checked - toggle the enabled state
+            if ($mod.Enabled) {
+                # Mod was originally enabled - disable it
+                $row.Cells[4].Value = "Disabled"
+                $EnabledMods[$folderKey] = $false
+            } else {
+                # Mod was originally disabled - enable it
+                $row.Cells[4].Value = "Enabled"
+                $EnabledMods[$folderKey] = $true
+            }
+        } else {
+            # Checkbox is unchecked - revert to original mod state
+            $row.Cells[4].Value = if ($mod.Enabled) { "Enabled" } else { "Disabled" }
+            $EnabledMods[$folderKey] = $mod.Enabled
+        }
+        
+        $grid.Refresh()
+    })
+
 $saveBtn = New-Object System.Windows.Forms.Button
 $saveBtn.Text = "Save to modlist.json"
 $saveBtn.Size = New-Object System.Drawing.Size(200, 40)
@@ -1033,16 +1069,17 @@ $revertAllBtn.Location = New-Object System.Drawing.Point(430, 610)
 $revertAllBtn.BackColor = [System.Drawing.Color]::LightYellow
 $revertAllBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
+
 # Add Reset Playlists button
 $resetPlaylistsBtn = New-Object System.Windows.Forms.Button
 $resetPlaylistsBtn.Text = "Reset Playlists File"
 $resetPlaylistsBtn.Size = New-Object System.Drawing.Size(200, 40)
-$resetPlaylistsBtn.Location = New-Object System.Drawing.Point(860, 610)
+$resetPlaylistsBtn.Location = New-Object System.Drawing.Point(940, 605)
 $resetPlaylistsBtn.BackColor = [System.Drawing.Color]::Orange
 $resetPlaylistsBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
 $resetPlaylistsBtn.Add_Click({
-    $res = [System.Windows.Forms.MessageBox]::Show("Delete MW5_Mod_Playlists.json file?`n`nThis will remove all playlists and reset the file.`n`nMake sure you have backups if needed.", "Reset Playlists", "YesNo", "Warning")
+    $res = [System.Windows.Forms.MessageBox]::Show("Are you sure? This will remove all playlists.", "Reset Playlists", "YesNo", "Warning")
     if ($res -eq "Yes") {
         try {
             Remove-Item $PlaylistsFile -Force -ErrorAction SilentlyContinue
@@ -1353,12 +1390,6 @@ $plDeleteBtn.Text = "Delete selected"
 $plDeleteBtn.Location = New-Object System.Drawing.Point(790, 605)
 $plDeleteBtn.Size = New-Object System.Drawing.Size(140, 30)
 
-$resetPlaylistsBtn = New-Object System.Windows.Forms.Button
-$resetPlaylistsBtn.Text = "Reset Playlists File"
-$resetPlaylistsBtn.Location = New-Object System.Drawing.Point(940, 605)
-$resetPlaylistsBtn.Size = New-Object System.Drawing.Size(160, 30)
-$resetPlaylistsBtn.BackColor = [System.Drawing.Color]::Orange
-$resetPlaylistsBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
 $plSaveBtn.Add_Click({
         $name = Normalize-PlaylistName $plName.Text
@@ -1511,19 +1542,23 @@ $plApplyBtn.Add_Click({
             $mod = $row.Tag
             $k = [string]$mod.FolderKey
             if ($map.ContainsKey($k)) {
-                $row.Cells[3].Value = "Enabled"
+                $row.Cells[4].Value = "Enabled"
                 # Use original load order from playlist if available, otherwise current load order
-                if ($p.originalLoadOrders -and $p.originalLoadOrders.ContainsKey($k)) {
-                    $row.Cells[1].Value = [int]$p.originalLoadOrders[$k]
+                if ($p.originalLoadOrders -and $p.originalLoadOrders.PSObject.Properties.Name -contains $k) {
+                    $row.Cells[1].Value = [int]$p.originalLoadOrders.$k
                 } else {
                     $row.Cells[1].Value = [int]$map[$k].LoadOrder
                 }
                 $EnabledMods[$k] = $true
             } else {
-                $row.Cells[3].Value = "Disabled"
+                $row.Cells[4].Value = "Disabled"
                 $EnabledMods[$k] = $false
             }
         }
+        
+        # Force grid refresh to make enabled status visible immediately
+        $grid.Refresh()
+        $grid.Invalidate()
 
         [System.Windows.Forms.MessageBox]::Show("Applied playlist '$($p.name)' to grid.`n`nNow click 'Save to modlist.json' to write mod.json + modlist.json.", "Playlist applied", "OK", "Information") | Out-Null
     })
