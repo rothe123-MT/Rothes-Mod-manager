@@ -556,7 +556,27 @@ function Update-ModReport {
     $w = 80
     $lineEq = ('=' * $w)
     $lineHy = ('-' * $w)
-    $modList = @($mods | Sort-Object LoadOrder)
+    # Get current grid sort order
+$gridModList = @()
+foreach ($row in $grid.Rows) {
+    $mod = $row.Tag
+    if ($mod) {
+        $gridModList += [PSCustomObject]@{
+            FolderKey = $mod.FolderKey
+            LoadOrder = $mod.LoadOrder
+            Enabled = $mod.Enabled
+            Name = $mod.Name
+        }
+    }
+}
+
+# Refresh grid to ensure latest state is captured
+if ($grid -ne $null) {
+    $grid.Refresh()
+}
+
+# Use grid's current sort order for report (preserve display order)
+$modList = $gridModList
     $nTotal = $modList.Count
     $nEnabled = @($modList | Where-Object { $_.Enabled }).Count
     $nConflict = @($conflictResults.Keys).Count
@@ -923,6 +943,7 @@ $comboColumn = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
 $comboColumn.Name = "Enabled"
 $comboColumn.HeaderText = "Enabled"
 $comboColumn.Width = 120
+$comboColumn.SortMode = "Automatic"  # Make column sortable
 $comboColumn.Items.Add("Enabled") | Out-Null
 $comboColumn.Items.Add("Disabled") | Out-Null
 $grid.Columns.Add($comboColumn) | Out-Null
@@ -936,7 +957,7 @@ $massChangeColumn.HeaderText = "Mass Enable Change"
 $massChangeColumn.Width = 80
 $grid.Columns.Add($massChangeColumn) | Out-Null
 
-foreach ($mod in ($mods | Sort-Object LoadOrder)) {
+foreach ($mod in $mods) {
     $i = $grid.Rows.Add()
     $row = $grid.Rows[$i]
 
@@ -1268,9 +1289,13 @@ $updateReportBtn.BackColor = [System.Drawing.Color]::LightGreen
 $updateReportBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
 $updateReportBtn.Add_Click({
+        # Only create report when button is explicitly clicked
         Update-ModReport
         [System.Windows.Forms.MessageBox]::Show("Report updated!`n`nMW5_Mod_List.txt has been regenerated.", "Success", "OK", "Information")
     })
+
+# Note: Report is no longer created automatically on program start
+# It's only created when user clicks the "Update Report" button
 
 $tabMods.Controls.Add($grid)
 $tabMods.Controls.Add($saveBtn)
